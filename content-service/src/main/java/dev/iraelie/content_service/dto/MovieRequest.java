@@ -1,7 +1,15 @@
 package dev.iraelie.content_service.dto;
 
 import dev.iraelie.content_service.model.Genre;
+import lombok.AllArgsConstructor;
+import lombok.Getter;
+import lombok.NoArgsConstructor;
+import lombok.Setter;
 
+@NoArgsConstructor
+@AllArgsConstructor
+@Getter
+@Setter
 public class MovieRequest {
     private String title;
 
