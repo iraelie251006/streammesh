@@ -2,15 +2,13 @@ package dev.iraelie.content_service.dto;
 
 import dev.iraelie.content_service.model.Genre;
 import dev.iraelie.content_service.model.VideoStatus;
-import lombok.AllArgsConstructor;
-import lombok.Getter;
-import lombok.NoArgsConstructor;
-import lombok.Setter;
+import lombok.*;
 
 import java.time.LocalDateTime;
 
 @Getter
 @Setter
+@Builder
 @NoArgsConstructor
 @AllArgsConstructor
 public class MovieResponse {
