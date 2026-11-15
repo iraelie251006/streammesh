@@ -99,4 +99,17 @@ public class ContentService {
         movie.setVideoStatus(VideoStatus.UPLOADED);
         movieRepository.save(movie);
     }
+
+    public void updateHlsUrl(String movieId, String hlsUrl) {
+        log.info("Updating HLS URL for movie: {}", movieId);
+
+        Movie movie = movieRepository.findById(movieId)
+                .orElseThrow(() -> new RuntimeException("Movie not found: " + movieId));
+
+        movie.setHlsUrl(hlsUrl);
+        movie.setVideoStatus(VideoStatus.READY);
+        movieRepository.save(movie);
+
+        log.info("Movie {} is now ready for streaming", movieId);
+    }
 }
