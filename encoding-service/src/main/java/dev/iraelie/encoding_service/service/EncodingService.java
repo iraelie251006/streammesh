@@ -10,6 +10,7 @@ import org.springframework.stereotype.Service;
 import software.amazon.awssdk.services.s3.S3Client;
 import software.amazon.awssdk.services.s3.model.GetObjectRequest;
 
+import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Paths;
 import java.util.Arrays;
@@ -116,14 +117,71 @@ public class EncodingService {
         s3Client.getObject(getObjectRequest, Paths.get(localVideoPath));
     }
 
-    private void encodeToHLS(String localVideoPath, String qualityDir, int width, int height, int bitrate) {
+    private void encodeToHLS(
+            String localVideoPath,
+            String qualityDir,
+            int width,
+            int height,
+            int bitrate
+    ) throws IOException, InterruptedException {
         String playlistPath = qualityDir + "/playlist.m3u8";
         String segmentPattern = localVideoPath + "/segment_%03d.ts";
 
-        List<String> commands = Arrays.asList();
+        List<String> command = Arrays.asList(
+                ffmpegPath,
+                "-i", localVideoPath,                       // input file
+                "-vf", "scale=" + width + ":" + height,     // scale to resolution
+                "-c:v", "libx264",                          // video codec
+                "-b:v", bitrate + "k",                      // video bitrate
+                "-c:a", "aac",                              // Audio codec
+                "-b:a", "128k",                             // Audio bitrate
+                "-hls_time", "10",                          // 10 second segment
+                "-hls_list_time", "0",                      // keep all segments
+                "-hls_segment_filename", segmentPattern,    // segment naming
+                "-f", "hls",                                // output format HLS
+                playlistPath                                // output playlist
+        );
+
+        ProcessBuilder processBuilder = new ProcessBuilder(command);
+        processBuilder.redirectErrorStream(true);
+
+        Process process = processBuilder.start();
+
+        int exitCode = process.waitFor();
+        if (exitCode != 0) {
+            throw new RuntimeException("FFmpeg encoding failed with exit code: " + exitCode);
+        }
     }
 
-    private void generateMasterPlaylist(String masterPlaylistPath) {
+    private void generateMasterPlaylist(String masterPlaylistPath) throws IOException{
+        StringBuilder master = new StringBuilder();
+        master.append("#EXTM3U\n");
+        master.append("EXT-X-VERSION:3\n\n");
+
+        int[][] qualities = {
+                {1920, 5000, 1080},
+                {1280, 2800, 720},
+                {854, 1200, 480},
+                {640, 800, 360}
+        };
+
+        for (int[] q: qualities) {
+            int width = q[0];
+            int bitrate = q[1];
+            int height = q[2];
+
+            master.append("#EXT-X-STREAM-INF:BANDWIDTH=")
+                    .append(bitrate * 1000)
+                    .append(", RESOLUTION=")
+                    .append(width)
+                    .append("x")
+                    .append(height)
+                    .append(", CODECS=\"avc1.42e01e, mp4a.40.2\"\n");
+
+            master.append(height).append("p/playlist.m3u8\n\n");
+        }
+
+        Files.writeString(Paths.get(masterPlaylistPath), master.toString());
     }
 
     private void uploadEncodedFilesToS3(String s, String encodedPrefix) {
