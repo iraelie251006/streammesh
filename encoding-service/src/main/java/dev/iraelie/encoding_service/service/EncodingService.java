@@ -7,14 +7,18 @@ import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.kafka.core.KafkaTemplate;
 import org.springframework.stereotype.Service;
+import software.amazon.awssdk.core.sync.RequestBody;
 import software.amazon.awssdk.services.s3.S3Client;
 import software.amazon.awssdk.services.s3.model.GetObjectRequest;
+import software.amazon.awssdk.services.s3.model.PutObjectRequest;
 
+import java.io.File;
 import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Paths;
 import java.util.Arrays;
 import java.util.List;
+import java.util.Objects;
 
 @Service
 @Slf4j
@@ -131,12 +135,12 @@ public class EncodingService {
                 ffmpegPath,
                 "-i", localVideoPath,                       // input file
                 "-vf", "scale=" + width + ":" + height,     // scale to resolution
-                "-c:v", "libx264",                          // video codec
+                "-c:v", "libx264",                          // video codec, libx264(H.264), libx265(H.265)
                 "-b:v", bitrate + "k",                      // video bitrate
                 "-c:a", "aac",                              // Audio codec
                 "-b:a", "128k",                             // Audio bitrate
                 "-hls_time", "10",                          // 10 second segment
-                "-hls_list_time", "0",                      // keep all segments
+                "-hls_list_size", "0",                      // keep all segments
                 "-hls_segment_filename", segmentPattern,    // segment naming
                 "-f", "hls",                                // output format HLS
                 playlistPath                                // output playlist
@@ -156,7 +160,7 @@ public class EncodingService {
     private void generateMasterPlaylist(String masterPlaylistPath) throws IOException{
         StringBuilder master = new StringBuilder();
         master.append("#EXTM3U\n");
-        master.append("EXT-X-VERSION:3\n\n");
+        master.append("#EXT-X-VERSION:3\n\n");
 
         int[][] qualities = {
                 {1920, 5000, 1080},
@@ -172,11 +176,11 @@ public class EncodingService {
 
             master.append("#EXT-X-STREAM-INF:BANDWIDTH=")
                     .append(bitrate * 1000)
-                    .append(", RESOLUTION=")
+                    .append(",RESOLUTION=")
                     .append(width)
                     .append("x")
                     .append(height)
-                    .append(", CODECS=\"avc1.42e01e, mp4a.40.2\"\n");
+                    .append(",CODECS=\"avc1.42e01e, mp4a.40.2\"\n");
 
             master.append(height).append("p/playlist.m3u8\n\n");
         }
@@ -184,10 +188,38 @@ public class EncodingService {
         Files.writeString(Paths.get(masterPlaylistPath), master.toString());
     }
 
-    private void uploadEncodedFilesToS3(String s, String encodedPrefix) {
+    private void uploadEncodedFilesToS3(String localDir, String s3EncodedPrefix) {
+        File directory = new File(localDir);
+        uploadDirectoryToS3(directory, localDir, s3EncodedPrefix);
+    }
+
+    private void uploadDirectoryToS3(File directory, String localDir, String s3EncodedPrefix) {
+        for (File file: directory.listFiles()) {
+            if (file.isDirectory()) {
+                uploadDirectoryToS3(file, localDir, s3EncodedPrefix);
+            } else {
+                String relativePath = file.getAbsolutePath()
+                        .substring(localDir.length() + 1)
+                        .replace("\\", "/");
+
+                String s3Key = s3EncodedPrefix + relativePath;
+
+                String contentType = file.getName().endsWith(".m3u8") ? "application/x-mpegURL" : "video/MP2T";
+
+                PutObjectRequest putObjectRequest = PutObjectRequest.builder()
+                        .bucket(bucketName)
+                        .key(s3Key)
+                        .contentType(contentType)
+                        .build();
+
+                s3Client.putObject(putObjectRequest, RequestBody.fromFile(file));
+                log.debug("Uploaded: {}", s3Key);
+            }
+        }
     }
 
     private void cleanupTempFiles(String jobPath) {
+        
     }
 
 }
