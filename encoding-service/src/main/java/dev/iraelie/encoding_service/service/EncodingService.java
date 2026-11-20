@@ -15,10 +15,11 @@ import software.amazon.awssdk.services.s3.model.PutObjectRequest;
 import java.io.File;
 import java.io.IOException;
 import java.nio.file.Files;
+import java.nio.file.Path;
 import java.nio.file.Paths;
 import java.util.Arrays;
+import java.util.Comparator;
 import java.util.List;
-import java.util.Objects;
 
 @Service
 @Slf4j
@@ -219,7 +220,19 @@ public class EncodingService {
     }
 
     private void cleanupTempFiles(String jobPath) {
-        
+        try {
+            Path dirPath = Paths.get(jobPath);
+            if (Files.exists(dirPath)) {
+                Files.walk(dirPath)
+                        .sorted(Comparator.reverseOrder())
+                        .map(Path::toFile)
+                        .forEach(File::delete);
+
+                log.info("Temp files cleaned up for job: {}", jobPath);
+            }
+        } catch (IOException e) {
+            log.warn("Failed to cleanup Temp file: {}", e.getMessage());
+        }
     }
 
 }
