@@ -6,7 +6,11 @@ import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.data.redis.core.RedisTemplate;
 import org.springframework.stereotype.Service;
+import software.amazon.awssdk.services.s3.model.GetObjectRequest;
 import software.amazon.awssdk.services.s3.presigner.S3Presigner;
+import software.amazon.awssdk.services.s3.presigner.model.GetObjectPresignRequest;
+
+import java.time.Duration;
 
 @Service
 @RequiredArgsConstructor
@@ -36,7 +40,7 @@ public class StreamingService {
             return StreamingResponse.builder()
                     .movieId(movieId)
                     .streamingUrl(cachedUrl)
-                    .quality("1080, 720, 460, 360")
+                    .quality("1080p, 720p, 460p, 360p")
                     .expiredInMinutes(presignedUrlExpiry)
                     .build();
         }
@@ -44,8 +48,37 @@ public class StreamingService {
         log.info("Generating new presigned url for movie: {}", movieId);
 
         String presignedUrl = generatePresignedUrl(playlistKey);
+
+        redisTemplate.opsForValue().set(cache_key, presignedUrl, Duration.ofMinutes(55));
+
+        log.info("Streaming URL generated and cached for movie: {}", movieId);
+
+        return StreamingResponse.builder()
+                .movieId(movieId)
+                .streamingUrl(presignedUrl)
+                .quality("1080p, 720p, 460p, 360p")
+                .expiredInMinutes(presignedUrlExpiry)
+                .build();
     }
 
     private String generatePresignedUrl(String playlistKey) {
+        GetObjectRequest getObjectRequest = GetObjectRequest.builder()
+                .bucket(bucketName)
+                .key(playlistKey)
+                .build();
+
+        GetObjectPresignRequest presignRequest = GetObjectPresignRequest.builder()
+                .getObjectRequest(getObjectRequest)
+                .signatureDuration(Duration.ofMinutes(presignedUrlExpiry))
+                .build();
+
+        return s3Presigner.presignGetObject(presignRequest).url().toString();
+    }
+
+    public void invalidateCache(String movieId) {
+        String cacheKey = STREAMING_URL_CACHE_PREFIX + movieId;
+        redisTemplate.delete(cacheKey);
+
+        log.info("Streaming URL cache invalidated for movie: {}", movieId);
     }
 }
